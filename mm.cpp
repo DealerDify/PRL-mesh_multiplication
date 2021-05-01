@@ -11,11 +11,15 @@ autor: Havlicek Lukas (xhavli46)
 #include <fstream>
 #include <sstream>
 #include <math.h>
+#include <chrono>
 
 #define TAG 0
 #define TAG_A 1
 #define TAG_B 2
 
+std::chrono::high_resolution_clock::time_point start,end;//pro mereni casu
+
+//funkce co nacte matici ze souboru(dle argumentu) a ulozi ji do vectoru
 std::vector<std::vector<int>> get_mat(const char *filename)
 {
     std::vector<std::vector<int>> mat;
@@ -36,9 +40,7 @@ std::vector<std::vector<int>> get_mat(const char *filename)
         while (lineStream >> x)
         {
             mat_line.push_back(x);
-            //printf("%d ",x);
         }
-        //printf("\n");
         mat.push_back(mat_line);
     }
     std::vector<int> mat_line;
@@ -48,6 +50,7 @@ std::vector<std::vector<int>> get_mat(const char *filename)
     return mat;
 }
 
+//funkce kontrolujici matici ve vectoru (vsechny radky musi mit stejny pocet hodnot)
 void check_mat(std::vector<std::vector<int>> mat)
 {
     int test = mat.front().size();
@@ -63,7 +66,7 @@ void check_mat(std::vector<std::vector<int>> mat)
     }
 }
 
-//returns number of cols of mat1 (same as rows of mat2)
+//funkce, kterou provadi master procesor na zacatku
 void master(int *tmp_arr)
 {
     auto mat1 = get_mat("mat1");
@@ -85,14 +88,16 @@ void master(int *tmp_arr)
     if (mat1_cols != mat2_rows)
     { //pokud pocet sloupcu matice A neni shodny s poctem radku matice B, nelze je nasobit
         MPI_Abort(MPI_COMM_WORLD, MPI_ERR_COUNT);
-        return; //NULL;
+        return;
     }
 
     tmp_arr[0] = mat1_cols;
     tmp_arr[1] = mat1_rows;
     tmp_arr[2] = mat2_cols;
-    //printf("%d | %d | %d \n",mat1_cols, mat1_rows, mat2_cols);
 
+    start = std::chrono::high_resolution_clock::now();
+
+    //rozeslani hodnot potrebnych v algoritmu vsem procesorum
     MPI_Bcast(tmp_arr, 3, MPI_INT, 0, MPI_COMM_WORLD);
 
     int id = 0;
@@ -102,7 +107,6 @@ void master(int *tmp_arr)
         {
             int x = *j;
             MPI_Send(&x, 1, MPI_INT, id, TAG_A, MPI_COMM_WORLD); //zasleme procesorum hodnoty
-            //printf("master sending A(%d) to %d\n",x,id);
         }
         id += mat2_cols;
     }
@@ -114,7 +118,6 @@ void master(int *tmp_arr)
         {
             int x = *j;
             MPI_Send(&x, 1, MPI_INT, id, TAG_B, MPI_COMM_WORLD); //zasleme procesorum hodnoty
-            //printf("master sending B(%d) to %d\n",x,id);
             id += 1;
         }
         id = 0;
@@ -122,6 +125,7 @@ void master(int *tmp_arr)
     return;
 }
 
+//funkce kterou provadi kazdy procesor (provedeni algoritmu)
 void every_proc(int myid, int size, int out_rows, int out_cols)
 {
     MPI_Status stat;
@@ -144,12 +148,12 @@ void every_proc(int myid, int size, int out_rows, int out_cols)
     {
         int a = 0;
         int b = 0;
-        //printf("%d waiting for a from: %d, b from: %d \n",myid, recv_a_id,recv_b_id);
+
         MPI_Recv(&a, 1, MPI_UNSIGNED, recv_a_id, TAG_A, MPI_COMM_WORLD, &stat); //prijmeme od predchoziho procesoru
-        //printf("i am: %d, got a: %d\n",myid, a);
         MPI_Recv(&b, 1, MPI_UNSIGNED, recv_b_id, TAG_B, MPI_COMM_WORLD, &stat); //prijmeme od predchoziho procesoru
-        //printf("i am: %d, got b: %d\n",myid, a);
+
         out += a * b;
+
         if (pos_i < out_rows - 1)
             MPI_Send(&b, 1, MPI_INT, myid + out_cols, TAG_B, MPI_COMM_WORLD);
         if (pos_j < out_cols - 1)
@@ -160,6 +164,13 @@ void every_proc(int myid, int size, int out_rows, int out_cols)
 
 void print_mat(int numprocs, int out_rows, int out_cols)
 {
+    //vytisk casu z mereni
+    end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+    //std::cout << "time: " << duration.count() << " us" << std::endl;
+
+
+    //vytisk matice
     printf("%d:%d\n", out_rows, out_cols);
     MPI_Status stat;
     int cnt = 0;
