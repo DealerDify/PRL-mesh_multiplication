@@ -1,2 +1,3 @@
 # PRL2
- prl projekt2 mesh multiplication
+ 
+FIT VUT PRL projekt2 mesh multiplication
